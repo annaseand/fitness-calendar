@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fitness Calendar</title>
+
+  <!-- PWA -->
+  <meta name="theme-color" content="#1565C0" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Fit Cal" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #111;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .hdr {
+      background: #fff;
+      border-bottom: 1px solid #dde0e6;
+      padding: 20px 28px 16px;
+    }
+    .hdr h1 { font-size: 1.15rem; font-weight: 800; margin-bottom: 12px; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+    .leg {
+      display: flex; align-items: center; gap: 6px;
+      font-size: .72rem; font-weight: 600; color: #555;
+    }
+    .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Calendar wrap ── */
+    .wrap {
+      max-width: 1440px;
+      margin: 24px auto;
+      padding: 0 20px 56px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* ── Month card ── */
+    .month {
+      background: #fff;
+      border: 1px solid #dde0e6;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 6px rgba(0,0,0,.06);
+    }
+    .month-title {
+      padding: 14px 22px;
+      font-size: 1rem;
+      font-weight: 800;
+      color: #111;
+      border-bottom: 1px solid #e8eaed;
+    }
+
+    /* ── Weekday labels ── */
+    .dow {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      background: #f8f9fb;
+      border-bottom: 1px solid #e8eaed;
+    }
+    .dow-lbl {
+      text-align: center;
+      padding: 9px 4px;
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      color: #aab0be;
+    }
+
+    /* ── Days grid ── */
+    .grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+
+    /* ── Day cell ── */
+    .cell {
+      border-right: 1px solid #e8eaed;
+      border-bottom: 1px solid #e8eaed;
+      min-height: 130px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      cursor: pointer;
+      transition: filter .15s;
+      background: #fff;
+    }
+    .cell:nth-child(7n) { border-right: none; }
+    .cell.empty { cursor: default; pointer-events: none; background: #fafbfc; }
+    .cell:not(.empty):hover { filter: brightness(.97); }
+
+    .cell.filled { background: var(--cell-bg); }
+    .cell.filled .day-num { color: rgba(255,255,255,.9); }
+    .cell.today:not(.filled) .day-num { color: #1565C0; }
+
+    .day-num { font-size: .8rem; font-weight: 800; color: #555; line-height: 1; }
+
+    .icon-labels { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+    .icon-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: .6rem;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(255,255,255,.22);
+      border-radius: 4px;
+      padding: 2px 6px 2px 3px;
+      width: fit-content;
+    }
+    .icon-pill svg { width: 11px; height: 11px; flex-shrink: 0; }
+
+    .note-preview {
+      font-size: .58rem;
+      font-weight: 500;
+      color: rgba(255,255,255,.75);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Overlay ── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.38);
+      z-index: 900;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .overlay.open { display: flex; }
+
+    /* ── Popup ── */
+    .popup {
+      background: #fff;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 16px 56px rgba(0,0,0,.2);
+      overflow: hidden;
+      animation: popIn .16s ease;
+    }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(.92) translateY(8px); }
+      to   { opacity: 1; transform: scale(1)   translateY(0);   }
+    }
+
+    .pop-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px 13px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .pop-title { font-size: .95rem; font-weight: 800; color: #111; }
+    .pop-close {
+      width: 28px; height: 28px;
+      border: none; border-radius: 50%;
+      background: #f1f3f5; color: #555;
+      font-size: .85rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pop-close:hover { background: #e5e7ea; }
+
+    .tog-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      padding: 16px 20px 10px;
+    }
+    .tog {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 12px 6px;
+      border-radius: 10px;
+      border: 2px solid #eceef0;
+      background: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color .15s, background .15s, transform .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tog:active { transform: scale(.96); }
+    .tog svg { width: 28px; height: 28px; }
+    .tog-lbl { font-size: .65rem; font-weight: 700; color: #bbb; transition: color .15s; }
+    .tog.on { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, #fff); }
+    .tog.on .tog-lbl { color: var(--c); }
+
+    .pop-notes { padding: 4px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+    .note-field { display: flex; flex-direction: column; gap: 4px; }
+    .note-lbl {
+      display: flex; align-items: center; gap: 6px;
+      font-size: .67rem; font-weight: 700; color: #999;
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+    .note-lbl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .note-ta {
+      width: 100%;
+      border: 1px solid #e8eaed;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: inherit;
+      font-size: .75rem;
+      color: #222;
+      background: #fafbfc;
+      resize: none;
+      transition: border-color .15s;
+      line-height: 1.5;
+    }
+    .note-ta:focus { outline: none; border-color: #aaa; background: #fff; }
+    .note-ta::placeholder { color: #ccc; }
+
+    /* ── Install banner ── */
+    #install-banner {
+      display: none;
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1565C0;
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: .78rem;
+      font-weight: 700;
+      box-shadow: 0 4px 20px rgba(0,0,0,.25);
+      gap: 12px;
+      align-items: center;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    #install-banner.show { display: flex; }
+    #install-btn { background: #fff; color: #1565C0; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; font-size: .78rem; cursor: pointer; }
+    #install-dismiss { background: none; border: none; color: rgba(255,255,255,.7); font-size: 1rem; cursor: pointer; padding: 0 0 0 4px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 720px) {
+      .wrap { padding: 0 10px 40px; margin: 14px auto; gap: 18px; }
+      .cell { min-height: 90px; padding: 7px; }
+      .hdr  { padding: 14px 16px 12px; }
+    }
+    @media (max-width: 480px) {
+      .cell    { min-height: 70px; padding: 5px; }
+      .dow-lbl { font-size: .58rem; padding: 7px 1px; }
+      .icon-pill { font-size: .55rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="hdr">
+  <h1>Fitness Calendar</h1>
+  <div class="legend" id="legend"></div>
+</header>
+
+<div class="wrap" id="wrap"></div>
+
+<!-- Popup -->
+<div class="overlay" id="overlay">
+  <div class="popup">
+    <div class="pop-hdr">
+      <span class="pop-title" id="popTitle"></span>
+      <button class="pop-close" id="popClose">✕</button>
+    </div>
+    <div class="tog-grid" id="togGrid"></div>
+    <div class="pop-notes">
+      <div class="note-field">
+        <div class="note-lbl">
+          <div class="note-lbl-dot" style="background:#1565C0"></div>
+          Workout Notes
+        </div>
+        <textarea class="note-ta" id="wNote" rows="2" placeholder="What did you train today?"></textarea>
+      </div>
+      <div class="note-field">
+        <div class="note-lbl">
+          <div class="note-lbl-dot" style="background:#2E7D32"></div>
+          Meal Notes
+        </div>
+        <textarea class="note-ta" id="mNote" rows="2" placeholder="What did you eat today?"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Install banner -->
+<div id="install-banner">
+  📲 Add to Home Screen
+  <button id="install-btn">Install</button>
+  <button id="install-dismiss">✕</button>
+</div>
+
+<script>
+/* ── SVG icons ── */
+const IC = {
+  barbell: `<svg viewBox="0 0 24 24" fill="currentColor">
+    <rect x=".5"  y="5.5" width="4"   height="13" rx="1.2"/>
+    <rect x="4.5" y="7.5" width="2.5" height="9"  rx=".8"/>
+    <rect x="7"   y="10"  width="10"  height="4"  rx="1.2"/>
+    <rect x="17"  y="7.5" width="2.5" height="9"  rx=".8"/>
+    <rect x="19.5"y="5.5" width="4"   height="13" rx="1.2"/>
+  </svg>`,
+  hype: `<svg viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="13,1 4,14 11,14 11,23 20,10 13,10"/>
+  </svg>`,
+  trainer: `<svg viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="12" cy="6" r="3.5"/>
+    <path d="M4 22v-1c0-4.4 3.6-8 8-8s8 3.6 8 8v1H4z"/>
+  </svg>`,
+  meal: `<svg viewBox="0 0 24 24" fill="currentColor">
+    <rect x="7"  y="2" width="2" height="8" rx="1"/>
+    <rect x="11" y="2" width="2" height="8" rx="1"/>
+    <rect x="15" y="2" width="2" height="8" rx="1"/>
+    <path d="M3 12h18a9 9 0 0 1-18 0z"/>
+    <rect x="9" y="21" width="6" height="1.5" rx=".75"/>
+  </svg>`,
+  rest: `<svg viewBox="0 0 24 24" fill="currentColor">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+  </svg>`,
+  run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+       stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="14.5" cy="3.5" r="2" fill="currentColor" stroke="none"/>
+    <path d="M14 6 11.5 11 9 15"/>
+    <path d="M11.5 11 14.5 14.5"/>
+    <path d="M13 8 17.5 9.5"/>
+    <path d="M12.5 8.5 8.5 7"/>
+  </svg>`,
+};
+
+const ACTS = [
+  { id:'barbell', label:'Barbell',   color:'#1565C0' },
+  { id:'hype',    label:'Hype',      color:'#C62828' },
+  { id:'trainer', label:'Trainer',   color:'#F57F17' },
+  { id:'meal',    label:'Meal Prep', color:'#2E7D32' },
+  { id:'rest',    label:'Rest',      color:'#E91E8C' },
+  { id:'run',     label:'Run',       color:'#F9A825' },
+];
+
+const MN = ['January','February','March','April','May','June',
+            'July','August','September','October','November','December'];
+const DN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+/* ── Storage ── */
+let db = {};
+try { db = JSON.parse(localStorage.getItem('fitcal6') || '{}'); } catch {}
+const persist = () => localStorage.setItem('fitcal6', JSON.stringify(db));
+const getDay  = k  => db[k] || { acts:[], wNote:'', mNote:'' };
+const dayKey  = (y,m,d) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+function blendBg(acts) {
+  const cols = acts.map(id => ACTS.find(a => a.id===id)?.color).filter(Boolean);
+  if (!cols.length) return null;
+  if (cols.length === 1) return cols[0];
+  const stops = cols.map((c,i) => `${c} ${((i/(cols.length-1))*100).toFixed(0)}%`).join(', ');
+  return `linear-gradient(135deg, ${stops})`;
+}
+
+function refreshCell(cell, k) {
+  const data = getDay(k);
+  const bg   = blendBg(data.acts);
+  if (bg) {
+    cell.classList.add('filled');
+    cell.style.setProperty('--cell-bg', bg);
+  } else {
+    cell.classList.remove('filled');
+    cell.style.removeProperty('--cell-bg');
+  }
+  cell.querySelector('.icon-labels').innerHTML = data.acts.map(id => {
+    const a = ACTS.find(x => x.id===id); if (!a) return '';
+    return `<span class="icon-pill"><span style="display:flex">${IC[id]}</span>${a.label}</span>`;
+  }).join('');
+  const np = cell.querySelector('.note-preview');
+  const preview = [data.wNote, data.mNote].filter(Boolean).join(' · ');
+  np.textContent = preview;
+  np.style.display = preview && data.acts.length ? '' : 'none';
+}
+
+const today = new Date();
+
+function buildMonth(year, month) {
+  const isCur    = today.getFullYear()===year && today.getMonth()===month;
+  const firstDow = new Date(year, month, 1).getDay();
+  const lastDay  = new Date(year, month+1, 0).getDate();
+
+  const block = document.createElement('div');
+  block.className = 'month';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'month-title';
+  titleEl.textContent = `${MN[month]} ${year}`;
+  block.appendChild(titleEl);
+
+  const dowRow = document.createElement('div');
+  dowRow.className = 'dow';
+  DN.forEach(d => {
+    const l = document.createElement('div');
+    l.className = 'dow-lbl';
+    l.textContent = d;
+    dowRow.appendChild(l);
+  });
+  block.appendChild(dowRow);
+
+  const grid = document.createElement('div');
+  grid.className = 'grid';
+
+  for (let i = 0; i < firstDow; i++) {
+    const e = document.createElement('div');
+    e.className = 'cell empty';
+    grid.appendChild(e);
+  }
+
+  for (let d = 1; d <= lastDay; d++) {
+    const k = dayKey(year, month, d);
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (isCur && today.getDate()===d ? ' today' : '');
+    cell.dataset.k = k;
+    cell.dataset.label = `${MN[month]} ${d}, ${year}`;
+    cell.innerHTML = `
+      <div class="day-num">${d}</div>
+      <div class="icon-labels"></div>
+      <div class="note-preview" style="display:none"></div>`;
+    refreshCell(cell, k);
+    cell.addEventListener('click', () => openPopup(k, cell.dataset.label));
+    grid.appendChild(cell);
+  }
+
+  block.appendChild(grid);
+  return block;
+}
+
+let activeKey = null;
+
+function openPopup(k, label) {
+  activeKey = k;
+  const data = getDay(k);
+  document.getElementById('popTitle').textContent = label;
+  document.getElementById('wNote').value = data.wNote || '';
+  document.getElementById('mNote').value = data.mNote || '';
+
+  const grid = document.getElementById('togGrid');
+  grid.innerHTML = '';
+  ACTS.forEach(act => {
+    const btn = document.createElement('button');
+    btn.className = 'tog' + (data.acts.includes(act.id) ? ' on' : '');
+    btn.type = 'button';
+    btn.style.setProperty('--c', act.color);
+    btn.innerHTML = `<span style="color:${act.color};display:flex">${IC[act.id]}</span>`
+                  + `<span class="tog-lbl">${act.label}</span>`;
+    btn.addEventListener('click', () => {
+      const r   = getDay(activeKey);
+      const idx = r.acts.indexOf(act.id);
+      idx === -1 ? r.acts.push(act.id) : r.acts.splice(idx, 1);
+      db[activeKey] = r; persist();
+      btn.classList.toggle('on', r.acts.includes(act.id));
+      const cell = document.querySelector(`.cell[data-k="${activeKey}"]`);
+      if (cell) refreshCell(cell, activeKey);
+    });
+    grid.appendChild(btn);
+  });
+
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closePopup() {
+  if (!activeKey) return;
+  const r = getDay(activeKey);
+  r.wNote = document.getElementById('wNote').value;
+  r.mNote = document.getElementById('mNote').value;
+  db[activeKey] = r; persist();
+  const cell = document.querySelector(`.cell[data-k="${activeKey}"]`);
+  if (cell) refreshCell(cell, activeKey);
+  document.getElementById('overlay').classList.remove('open');
+  activeKey = null;
+}
+
+document.getElementById('popClose').addEventListener('click', closePopup);
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('overlay')) closePopup();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePopup(); });
+
+function buildLegend() {
+  const el = document.getElementById('legend');
+  ACTS.forEach(a => {
+    const item = document.createElement('span');
+    item.className = 'leg';
+    item.innerHTML = `<span class="leg-dot" style="background:${a.color}"></span>${a.label}`;
+    el.appendChild(item);
+  });
+}
+
+(function init() {
+  buildLegend();
+  const wrap = document.getElementById('wrap');
+  const now  = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  wrap.appendChild(buildMonth(y, m));
+  wrap.appendChild(buildMonth(m === 11 ? y+1 : y, m === 11 ? 0 : m+1));
+})();
+
+/* ── PWA: Install prompt ── */
+let deferredPrompt = null;
+const banner = document.getElementById('install-banner');
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  banner.classList.add('show');
+});
+
+document.getElementById('install-btn').addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  banner.classList.remove('show');
+});
+
+document.getElementById('install-dismiss').addEventListener('click', () => {
+  banner.classList.remove('show');
+});
+
+window.addEventListener('appinstalled', () => { banner.classList.remove('show'); });
+
+/* ── Service Worker ── */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(console.error);
+  });
+}
+</script>
+</body>
+</html>

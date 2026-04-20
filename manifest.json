@@ -1,0 +1,26 @@
+{
+  "name": "Fitness Calendar",
+  "short_name": "Fit Cal",
+  "description": "Track workouts and meals with a two-month fitness calendar",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#1565C0",
+  "orientation": "portrait-primary",
+  "categories": ["health", "fitness"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

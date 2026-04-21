@@ -1,4 +1,4 @@
-const CACHE = 'fitcal-v1';
+const CACHE = 'fitcal-v2';
 const ASSETS = [
   './',
   './index.html',

@@ -13,6 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="Fit Cal" />
   <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -299,6 +300,21 @@
       margin-bottom: 6px;
     }
 
+    /* ── Sync indicator ── */
+    .sync-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+      margin-left: 8px;
+      vertical-align: middle;
+      transition: background .4s;
+    }
+    .sync-dot.syncing { background: #F57F17; animation: pulse .9s infinite; }
+    .sync-dot.online  { background: #2E7D32; }
+    .sync-dot.error   { background: #C62828; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
     /* ── Install banner ── */
     #install-banner {
       display: none;
@@ -338,7 +354,7 @@
 <body>
 
 <header class="hdr">
-  <h1>Fitness Calendar</h1>
+  <h1>Fitness Calendar <span id="syncDot" class="sync-dot" title="Sync status"></span></h1>
   <div class="legend" id="legend"></div>
 </header>
 
@@ -430,12 +446,55 @@ const MN = ['January','February','March','April','May','June',
             'July','August','September','October','November','December'];
 const DN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-/* ── Storage ── */
+/* ── Supabase config ── */
+const SUPA_URL = 'https://kebwdamoxkykvilbczqu.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtlYndkYW1veGt5a3ZpbGJjenF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NDAxODQsImV4cCI6MjA5MjMxNjE4NH0.lhWClTvpfTHtcFzf1sB58YJCVdpM6-NIsVeERRafp68';
+let supa = null;
+
+/* ── Storage (localStorage as cache, Supabase as source of truth) ── */
 let db = {};
 try { db = JSON.parse(localStorage.getItem('fitcal6') || '{}'); } catch {}
-const persist = () => localStorage.setItem('fitcal6', JSON.stringify(db));
-const getDay  = k  => db[k] || { acts:[], wNote:'', mNote:'', photo: null };
-const dayKey  = (y,m,d) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+const getDay = k => db[k] || { acts:[], wNote:'', mNote:'', photo: null };
+const dayKey = (y,m,d) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+function rowToDay(row) {
+  return {
+    acts:  Array.isArray(row.icons) ? row.icons : [],
+    wNote: row.workout || '',
+    mNote: row.meal    || '',
+    photo: row.photo   || null,
+  };
+}
+
+function setSyncDot(state) {
+  const dot = document.getElementById('syncDot');
+  if (dot) { dot.className = 'sync-dot ' + state; dot.title = { syncing:'Syncing…', online:'Synced', error:'Sync error — using local cache' }[state] || ''; }
+}
+
+async function persist(key) {
+  localStorage.setItem('fitcal6', JSON.stringify(db)); // always update cache
+  if (!supa) return;
+  const d = db[key];
+  setSyncDot('syncing');
+  try {
+    if (!d || (!d.acts.length && !d.wNote && !d.mNote && !d.photo)) {
+      await supa.from('calendar_days').delete().eq('day_key', key);
+    } else {
+      await supa.from('calendar_days').upsert({
+        day_key: key,
+        icons:   d.acts,
+        workout: d.wNote || null,
+        meal:    d.mNote || null,
+        photo:   d.photo || null,
+      });
+    }
+    setSyncDot('online');
+  } catch (e) {
+    console.warn('Supabase write error:', e.message);
+    setSyncDot('error');
+  }
+}
 
 /* ── Image compression ── */
 function compressImage(file, maxPx, quality, cb) {
@@ -572,7 +631,7 @@ function openPopup(k, label) {
       const r   = getDay(activeKey);
       const idx = r.acts.indexOf(act.id);
       idx === -1 ? r.acts.push(act.id) : r.acts.splice(idx, 1);
-      db[activeKey] = r; persist();
+      db[activeKey] = r; persist(activeKey);
       btn.classList.toggle('on', r.acts.includes(act.id));
       const cell = document.querySelector(`.cell[data-k="${activeKey}"]`);
       if (cell) refreshCell(cell, activeKey);
@@ -598,7 +657,7 @@ function renderPopupPhoto(photoData) {
     wrap.querySelector('.photo-remove').addEventListener('click', () => {
       const r = getDay(activeKey);
       r.photo = null;
-      db[activeKey] = r; persist();
+      db[activeKey] = r; persist(activeKey);
       renderPopupPhoto(null);
       const cell = document.querySelector(`.cell[data-k="${activeKey}"]`);
       if (cell) refreshCell(cell, activeKey);
@@ -619,7 +678,7 @@ function renderPopupPhoto(photoData) {
       compressImage(file, 900, 0.72, dataUrl => {
         const r = getDay(activeKey);
         r.photo = dataUrl;
-        db[activeKey] = r; persist();
+        db[activeKey] = r; persist(activeKey);
         renderPopupPhoto(dataUrl);
         const cell = document.querySelector(`.cell[data-k="${activeKey}"]`);
         if (cell) refreshCell(cell, activeKey);
@@ -635,7 +694,7 @@ function closePopup() {
   const r = getDay(activeKey);
   r.wNote = document.getElementById('wNote').value;
   r.mNote = document.getElementById('mNote').value;
-  db[activeKey] = r; persist();
+  db[activeKey] = r; persist(activeKey);
   const cell = document.querySelector(`.cell[data-k="${activeKey}"]`);
   if (cell) refreshCell(cell, activeKey);
   document.getElementById('overlay').classList.remove('open');
@@ -660,12 +719,70 @@ function buildLegend() {
 
 (function init() {
   buildLegend();
+  // Render immediately from localStorage cache (instant)
   const wrap = document.getElementById('wrap');
   const now  = new Date();
   const y = now.getFullYear(), m = now.getMonth();
   wrap.appendChild(buildMonth(y, m));
   wrap.appendChild(buildMonth(m === 11 ? y+1 : y, m === 11 ? 0 : m+1));
+  // Then connect Supabase and sync in the background
+  initSupabase();
 })();
+
+async function initSupabase() {
+  try {
+    supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+    setSyncDot('syncing');
+
+    const { data, error } = await supa.from('calendar_days').select('*');
+    if (error) throw error;
+
+    if (data.length > 0) {
+      // Supabase is source of truth — overwrite local cache
+      db = {};
+      data.forEach(row => { db[row.day_key] = rowToDay(row); });
+    } else if (Object.keys(db).length > 0) {
+      // First-time sync: migrate existing localStorage data up to Supabase
+      const rows = Object.entries(db).map(([day_key, d]) => ({
+        day_key,
+        icons:   d.acts  || [],
+        workout: d.wNote || null,
+        meal:    d.mNote || null,
+        photo:   d.photo || null,
+      }));
+      const { error: upErr } = await supa.from('calendar_days').upsert(rows);
+      if (upErr) throw upErr;
+    }
+
+    localStorage.setItem('fitcal6', JSON.stringify(db));
+    // Refresh all rendered cells with synced data
+    document.querySelectorAll('.cell[data-k]').forEach(cell => refreshCell(cell, cell.dataset.k));
+    setSyncDot('online');
+
+    // Real-time: reflect changes made on other devices instantly
+    supa.channel('calendar-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_days' }, payload => {
+        if (payload.eventType === 'DELETE') {
+          delete db[payload.old.day_key];
+          const cell = document.querySelector(`.cell[data-k="${payload.old.day_key}"]`);
+          if (cell) refreshCell(cell, payload.old.day_key);
+        } else {
+          const row = payload.new;
+          db[row.day_key] = rowToDay(row);
+          const cell = document.querySelector(`.cell[data-k="${row.day_key}"]`);
+          if (cell) refreshCell(cell, row.day_key);
+        }
+        localStorage.setItem('fitcal6', JSON.stringify(db));
+      })
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') setSyncDot('online');
+      });
+
+  } catch (e) {
+    console.warn('Supabase unavailable, using local cache:', e.message);
+    setSyncDot('error');
+  }
+}
 
 /* ── PWA: Install prompt ── */
 let deferredPrompt = null;

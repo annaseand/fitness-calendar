@@ -731,7 +731,14 @@ function buildLegend() {
 
 async function initSupabase() {
   try {
-    supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+    supa = window.supabase.createClient(SUPA_URL, SUPA_KEY, {
+      global: {
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+        }
+      }
+    });
     setSyncDot('syncing');
 
     const { data, error } = await supa.from('calendar_days').select('*');
